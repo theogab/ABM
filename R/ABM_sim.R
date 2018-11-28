@@ -19,7 +19,7 @@ sim_ABM <- function(theta0 = 0, sigma2 = 1, rho = 1, delta = 1, lambda = 5, nspm
       # asymetric inheritance of trait
       x[,i] <- x[,i-1]
       x[spe,i] <- rho * x[spe, i-1]
-      x[nsp+1:sum(spe),i] <- (rho + delta + 1) * x[spe, i-1]
+      x[nsp+1:sum(spe),i] <- (1+rho*(delta-1)) * x[spe, i-1]
       # trait evolution under brownian motion
       x[,i] <- rnorm(nrow(x), x[,i], sigma2)
       # fill vector for speciation process
@@ -122,29 +122,3 @@ plot_ABM_sim(sim[[7]], "#ac5e63", F, xlim = c(0, ncol(sim[[7]])), ylim = c(0, ma
 legend(100, 90, legend = c(expression(delta == 0.1), expression(delta == 0.9)), lty = 1, col = c("#518eb6", "#ac5e63"), bty = "n")
 dev.off()
 
-
-
-v1 <- function(rho, Va){
-  return(Va*ifelse(rho<.5, rho, 2*rho-1))
-}
-v2 <- function(rho, Va){
-  return(Va*ifelse(rho<.5, 1-rho, 1))
-}
-
-colvec <- colorRampPalette(rev(c("#d53e4f", "#f46d43", "#fdae61", "#fee08b", "#ffffbf", "#e6f598", "#abdda4",
-                              "#88ddaa", "#66c2a5", "#37b69b", "#3288bd", "#71acbc")))(101)
-rhos <- seq(1e-3, 1, length = 100)
-Va <- 10
-out_v1 <- v1(rhos, Va)
-names(out_v1) <- rhos
-out_v2 <- v2(rhos, Va)
-names(out_v2) <- rhos
-
-layout(t(1:2))
-plot(rep(rhos, times = 100), rep(deltas, each = 100), pch = 15, col = colvec[round(out_v1/max(c(out_v1, out_v2))*100)+1],
-     main = expression(paste("Effect of ", rho, " and ", delta, " on ", v[1])), xlab = expression(rho), ylab = expression(delta)) 
-plot(rep(rhos, times = 100), rep(deltas, each = 100), pch = 15, col = colvec[round(out_v2/max(c(out_v1, out_v2))*100)+1],
-     main = expression(paste("Effect of ", rho, " and ", delta, " on ", v[2])), xlab = expression(rho), ylab = expression(delta))
-
-hist(out_v1)
-hist(out_v2)
