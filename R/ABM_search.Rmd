@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 
 
-## ABM conditions to match
+## ABM conditions to match  
 
 
 This presents the conditions that have to be matched for the inheritance of traits variance (range) during speciation.
@@ -30,35 +30,51 @@ axis(1, at = c(2,5,8), labels = c(expression(T[a]), expression(T[s]), 0))
 
 First, each variance has to be strictly positive:
 
-**condition 1:** $V_a > 0$, $V_1 > 0$ and $V_2 > 0$
+**condition 1:** 
+
+$$V_a > 0$$
+
+$$V_1 > 0$$
+
+$$V_2 > 0$$
 
 
 Second, the ancestral variance has to be conserved:
 
-**condition 2:** $V_a ≤ V_1 + V_2 ≤ 2V_a$
+**condition 2:**
+
+$$V_a ≤ V_1 + V_2 ≤ 2V_a$$
 
 
 Ideally, we should allow the parametrization to meet a simple Brownian motion such as:
 
-$V_a = V_1 = V_2$
-
-
+$$V_a = V_1 = V_2$$
 
 ## Latest try
 
 
-We consider a parameter controling the bigger amount of variance inherited by one the descendants:
+We consider a parameter controling $V_1$:
 
-$\rho = \frac{V_2}{V_a}$ with $0 < \rho ≤ 1$ and $V_1 ≤ V_2$.
-
-
-We consider another parameter controling the difference between the amount of inherited variance by descendants:
-
-$\delta = \frac{V_1}{V_2}$ with $0 < \delta ≤ 1$.
+$$\rho = \frac{V_1}{V_a} \mbox{ with } 0 < \rho ≤ 1$$
 
 
-With that parametrization only **condition 1** is met. We have a simple BM ($V_a = V_1 = V_2$) with $\rho = 1$ and 
-$\delta = 1$
+We consider another parameter controling the amount of variance inherited by both $V_1$ and $V_2$:
+
+$$\delta = \frac{V_2 + V_1 - V_a}{V_1}\mbox{ with }0 < \delta ≤ 1$$  
+
+
+That way we have:
+
+
+$$V_1=\rho V_a$$  
+
+
+$$V_2=1+\rho(\delta - 1)$$  
+
+
+
+That parametrization meets both **condition 1** and **condition 2**. We have a simple BM ($V_a = V_1 = V_2$) with $\rho = 1$ and 
+$\delta = 1$  
 
 
 
@@ -66,10 +82,11 @@ $\delta = 1$
 
 ```{r}
 v1 <- function(rho, delta, Va){
-  return(rho*delta*Va)
+  return(Va*(rho))
 }
+
 v2 <- function(rho, delta, Va){
-  return(rho*Va)
+  return(Va*((1-rho)+delta*rho))
 }
 
 colvec <- colorRampPalette(rev(c("#d53e4f", "#f46d43", "#fdae61", "#fee08b", "#ffffbf", "#e6f598", "#abdda4",
@@ -108,5 +125,60 @@ hist(out_v1 + out_v2, main = expression(V[1]+V[2]), breaks = seq(min(out_v1 + ou
 
 
 ```
+
+
+The parameters here don't have a real meaning but we can interpret:  
+ - the asymetry between the inherited variance of descendants 
+ 
+ 
+ $$\eta =\frac{min(V_1,V_2)}{max(V_1,V_2)}=\begin{cases} \frac{\rho}{\rho\delta-rho+1}&\mbox{if }V_1 < V_2\\1& \mbox{if } V_1 = V_2\\\delta - 1 + \frac{1}{\rho} & \mbox{if }V_1 > V_2 \end{cases}\mbox{ with }0≤\eta≤1$$
+ - the variance partitioning between descendants  
+ 
+ 
+ $$\omega = 1-(\frac{V_1+V_2-V_a}{V_a})= 1-\rho\delta \mbox{ with } 0≤\omega≤1$$
+ 
+
+```{r}
+eta <- function(rho, delta){
+  eta <- rho/(rho*delta-rho+1)
+  eta[eta>1] <- 1/eta[eta>1]
+  return(eta)
+}
+
+omega <- function(rho, delta){
+  return(1-rho*delta)
+}
+
+colvec <- colorRampPalette(rev(c("#d53e4f", "#f46d43", "#fdae61", "#fee08b", "#ffffbf", "#e6f598", "#abdda4",
+                              "#88ddaa", "#66c2a5", "#37b69b", "#3288bd", "#71acbc")))(101)
+rhos <- seq(1e-3, 1, length = 100)
+deltas <- seq(1e-3, 1, length = 100)
+Va <- 5
+out_eta <- matrix(NA, 100, 100)
+dimnames(out_eta) <- list(rhos, deltas)
+out_omega <- matrix(NA, 100, 100)
+dimnames(out_omega) <- list(rhos, deltas)
+
+for(i in 1:100){
+rho <- rhos[i]
+out_eta[i,] <- eta(rho, deltas)
+out_omega[i,] <- omega(rho, deltas)
+}
+
+layout(t(1:2))
+par(mar = c(10,5,5,1), las = 1)
+plot(rep(rhos, times = 100), rep(deltas, each = 100), pch = 15, col = colvec[round(out_eta*100)+1],
+     main = expression(paste("Effect of ", rho, " and ", delta, " on ", eta)), xlab = expression(rho), ylab = expression(delta)) 
+hist(out_eta, main = expression(eta),breaks = seq(min(out_eta),max(out_eta), length = 100), col = colvec, border = NA, xlab = expression(eta))
+
+
+plot(rep(rhos, times = 100), rep(deltas, each = 100), pch = 15, col = colvec[round(out_omega*100)+1],
+     main = expression(paste("Effect of ", rho, " and ", delta, " on ", omega)), xlab = expression(rho), ylab = expression(delta))
+hist(out_omega, main = expression(omega),breaks = seq(min(out_omega),max(out_omega), length = 100), col = colvec, border = NA, xlab = expression(omega))
+
+```
+ 
+
+
 
 
