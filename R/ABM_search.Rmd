@@ -72,7 +72,6 @@ $$V_1=\rho V_a$$
 $$V_2=1+\rho(\delta - 1)$$  
 
 
-
 That parametrization meets both **condition 1** and **condition 2**. We have a simple BM ($V_a = V_1 = V_2$) with $\rho = 1$ and 
 $\delta = 1$  
 
