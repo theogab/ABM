@@ -18,6 +18,9 @@ lik_ABM <- function(tree, logX, m, pars, Sx, Sm){
   #  cat("Sm=", Sm, "\n")
   #}
     
+  likX <- sum(c(rg))
+  likm <- sum(c(mp))
+  #cat("logX", rg, "\nm", m, "\n")
   lik <- sum(c(rg, mp))
   return(lik)
 } 
@@ -142,7 +145,7 @@ make_ABM <- function(phy, traits, scale = F){
   ABM$priors$pars[[2]] <- bite:::hpfun("Gamma", c(1.1, .5))
   ABM$priors$pars[[3]] <- bite:::hpfun("Uniform", c(0,0.99))
   ABM$priors$pars[[4]] <- bite:::hpfun("Uniform", c(0,1))
-  ABM$update.freq <- c(0.9, 0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1)
+  ABM$update.freq <- c(0.2,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1)
   
   #### Prepare headers of log file ####
   
@@ -160,44 +163,35 @@ jnorm <- function (means,vars){
 }
 
 gibbs_move <- function(tree, n, m, logX, Sm, SX, pars, priors){
-  
   sig2  <- pars[1:2]
   nu   <- pars[3]
   omega <- pars[4]
-  
+  ## Start with the most recent nodes and go to the root
   pp <- prop.part(tree)
   I <- order(sapply(pp, length))
   e1 <- tree$edge[,1]
   e2 <- tree$edge[,2]
-  
-  ## Conditional distributions of node's logX based on root state (P(logXi|logX0))
-  anc.logX.var <- numeric(length(I))
-  anc.logX.lik <- numeric(length(I))
-  anc.logX.var[1] <- 0
-  anc.logX.lik[1] <- logX[n+1]
-  ## Start with the root nodes and go to the most recent nodes
-  for(i in rev(I[-length(I)])){# ignore root state (length(I))
-    j <- i + n
-    anc.logX.var[i] <- anc.logX.var[e1[e2 == j]-n] + sig2[2] * tree$edge.length[e2 == j]
-    anc.logX.lik[i] <- rnge(omega, nu, anc.logX.lik[e1[e2 == j]-n], SX[j])
-  }
-  
-  ## Conditional distributions of node's logX based on descendants + combining and sampling
-  samp.logX1 <- numeric(length(I))
-  samp.logX2 <- numeric(length(I))
-  ## Start with the most recent nodes and go to the root
-  for(i in I[-length(I)]){# ignore root state (length(I))
-    
-    j <- i + n  # real node number
+  for(i in I[-length(I)]){# Do not sample the root states
+    ## Conditional distributions on descendants
     # value of descendants
+    desc.m <- m[pp[[i]]]
     desc.logX <- logX[pp[[i]]]
     # variance accumulated during evolutionary history
+    desc.m.var <- sig2[1] * tree$edge.length[e2 %in% pp[[i]]]
     desc.logX.var <- sig2[2] * tree$edge.length[e2 %in% pp[[i]]]
-    
+    ## Conditional distributions on ancestor
+    # value of ancestor
+    j <- i + n # real node number
+    anc.m <- midpt(omega, nu, logX[e1[e2 == j]], m[e1[e2 == j]], SX[j], Sm[j])
+    anc.logX <- rnge(omega, nu, logX[e1[e2 == j]], SX[j])
+    # variance accumulated during evolutionary history
+    anc.m.var <- sig2[1] * tree$edge.length[e2 == j]
+    anc.logX.var <- sig2[2] * tree$edge.length[e2 == j]
+    # effect of asymmetric inheritance for the range
+    anc.lik.logX <- rnge(omega, nu, anc.logX, SX[pp[[i]]])
     # joint distribution of joint descendants anc ancestor giving conditional distribution of i
-    join.logX1 <- jnorm(c(anc.logX.lik[i], desc.logX[1]), c(anc.logX.var[i], desc.logX.var[1]))
-    join.logX2 <- jnorm(c(anc.logX.lik[i], desc.logX[2]), c(anc.logX.var[i], desc.logX.var[2]))
-    
+    join.logX1 <- jnorm(c(anc.lik.logX[1], desc.logX[1]), c(anc.logX.var, desc.logX.var[1]))
+    join.logX2 <- jnorm(c(anc.lik.logX[2], desc.logX[2]), c(anc.logX.var, desc.logX.var[2]))
     # prior dstribution of the range
     prior.logX.anc <- priors$logX[[i]](1)[[2]][[2]]
     prior.logX.desc <- rnge(omega, nu, prior.logX.anc[1], SX[e2 %in% pp[[i]]])
@@ -205,55 +199,16 @@ gibbs_move <- function(tree, n, m, logX, Sm, SX, pars, priors){
     post.logX1 <- jnorm(c(prior.logX.desc[1], join.logX1[1]), c(prior.logX.anc[2], join.logX1[2]))
     post.logX2 <- jnorm(c(prior.logX.desc[2], join.logX2[1]), c(prior.logX.anc[2], join.logX2[2]))
     # sample logX from posterior
-    samp.logX1[i] <- rnorm(1, post.logX1[1], sqrt(post.logX1[2]))
-    samp.logX2[i] <- rnorm(1, post.logX2[1], sqrt(post.logX2[2]))
+    samp.logX1 <- post.logX1[1]
+    samp.logX2 <- post.logX2[1]
+      #samp.logX1 <- plot(density(rnorm(1000, post.logX1[1], sqrt(post.logX1[2]))), main = sprintf("posterior logX of %s", pp[[i]][1]))
+      #samp.logX2 <- plot(density(rnorm(1000, post.logX2[1], sqrt(post.logX2[2]))), main = sprintf("posterior logX of %s", pp[[i]][2]))
     # get logXa from descendants values
-    logX[j] <- anc_rnge(nu, omega, samp.logX1[i], samp.logX2[i]) 
-    
-   ## replace descending tips by j in pp
-    pp <- lapply(pp, function(d){
-      if(any(pp[[i]] %in% d)){
-        d <- d[-which(d %in% pp[[i]])]
-        c(d, j)    
-      } else {
-        d
-      }
-    }) 
-  }
-  
-  pp <- prop.part(tree)
-  ## Conditional distributions of node's m based on root state (P(mi|m0))
-  anc.m.var <- numeric(length(I))
-  anc.m.lik <- numeric(length(I))
-  anc.m.var[1] <- 0
-  anc.m.lik[1] <- m[n+1]
-  ## Start with the root nodes and go to the most recent nodes
-  for(i in rev(I[-length(I)])){# ignore root state (length(I))
-    j <- i + n
-    anc.m.var[i] <- anc.m.var[e1[e2 == j]-n] + sig2[1] * tree$edge.length[e2 == j]
-    anc.m.lik[i] <- midpt(omega, nu, logX[e1[e2 == j]], anc.m.lik[e1[e2 == j]-n], SX[j], Sm[j])
-  }
-  
-  ## Conditional distributions of node's m based on descendants + combining and sampling
-  ## Start with the most recent nodes and go to the root
-  for(i in I[-length(I)]){# ignore root state (length(I))
-    
-    # value of descendants
-    desc.m <- m[pp[[i]]]
-    # variance accumulated during evolutionary history
-    desc.m.var <- sig2[1] * tree$edge.length[e2 %in% pp[[i]]]
-    
-    # value of ancestor
-    j <- i + n # real node number
-    anc.m <- m[e1[e2 == j]]
-    # variance accumulated during evolutionary history
-    anc.m.var <- sig2[1] * tree$edge.length[e2 == j]
-    
+    logX[j] <- anc_rnge(nu, omega, samp.logX1, samp.logX2) 
     # effect of asymmetric inheritance for the midpoint
-    join.m1 <- jnorm(c(anc.m.lik[i], desc.m[1]), c(anc.m.var, desc.m.var[1]))
-    join.m2 <- jnorm(c(anc.m.lik[i], desc.m[2]), c(anc.m.var, desc.m.var[2]))
-    #plot(density(rnorm(1000, join.m1[1], sqrt(join.m1[2]))), xlim = c(0,20), col = "blue")
-    #lines(density(rnorm(1000, join.m2[1], sqrt(join.m2[2]))), col = "red")
+    anc.lik.m <- midpt(omega, nu, logX[j], anc.m, SX[e2 %in% pp[[i]]], Sm[e2 %in% pp[[i]]])
+    join.m1 <- jnorm(c(anc.lik.m[1], desc.m[1]), c(anc.m.var, desc.m.var[1]))
+    join.m2 <- jnorm(c(anc.lik.m[2], desc.m[2]), c(anc.m.var, desc.m.var[2]))
     # prior dstribution of the midpoint
     prior.m.anc <- priors$logX[[i]](1)[[2]][[2]]
     prior.m.desc <- midpt(omega, nu, logX[j], prior.m.anc[1], SX[e2 %in% pp[[i]]], Sm[e2 %in% pp[[i]]])
@@ -261,12 +216,12 @@ gibbs_move <- function(tree, n, m, logX, Sm, SX, pars, priors){
     post.m1 <- jnorm(c(prior.m.desc[1], join.m1[1]), c(prior.m.anc[2], join.m1[2]))
     post.m2 <- jnorm(c(prior.m.desc[2], join.m2[1]), c(prior.m.anc[2], join.m2[2]))
     # sample midpoint from posterior
-    samp.m1 <- rnorm(1, post.m1[1], sqrt(post.m1[2]))
-    samp.m2 <- rnorm(1, post.m2[1], sqrt(post.m2[2]))
-    
+    #samp.m1 <- rnorm(1, post.m1[1], sqrt(post.m1[2]))
+    samp.m1 <- post.m1[1]
+    #samp.m2 <- rnorm(1, post.m2[1], sqrt(post.m2[2]))
+    samp.m2 <- post.m2[1]
     # get logXa from descendants values
-    m[j] <- anc_midpt(samp.logX1[i], samp.logX2[i], logX[j], samp.m1, samp.m2)
-    
+    m[j] <- anc_midpt(samp.logX1, samp.logX2, logX[j], samp.m1, samp.m2)
     ## replace descending tips by j in pp
     pp <- lapply(pp, function(d){
       if(any(pp[[i]] %in% d)){
@@ -277,7 +232,6 @@ gibbs_move <- function(tree, n, m, logX, Sm, SX, pars, priors){
       }
     }) 
   }
-  
   return(list(m0 = m, logX0 = logX))
 }
 
@@ -346,6 +300,12 @@ mcmc_ABM <- function(ABM, log.file = "my_ABM_mcmc.log", sampling.freq = 1000, pr
       anc <- sample(unique(ABM$data$tree$edge[,1]), 2)
       Sm1 <- Sm0
       Sm0[ABM$data$tree$edge[ABM$data$tree$edge[,1] %in% anc,2]] <- Sm0[ABM$data$tree$edge[ABM$data$tree$edge[,1] %in% anc,2]] * (-1)
+      gibbs <- T
+      new_st <- gibbs_move(tree = ABM$data$tree, n = ABM$data$n, m = m0, logX = logX0, Sm = Sm0, SX = Sx0, pars = pars0, priors = ABM$priors)
+      m1 <- m0
+      logX1 <- logX0
+      m0 <- new_st$m0
+      logX0 <- new_st$logX0
       hasting.ratio <- 1
      }
     
@@ -355,6 +315,12 @@ mcmc_ABM <- function(ABM, log.file = "my_ABM_mcmc.log", sampling.freq = 1000, pr
       anc <- sample(unique(ABM$data$tree$edge[,1]), 2)
       Sx1 <- Sx0
       Sx0[ABM$data$tree$edge[ABM$data$tree$edge[,1] %in% anc,2]] <- Sx0[ABM$data$tree$edge[ABM$data$tree$edge[,1] %in% anc,2]] * (-1)
+      gibbs <- T
+      new_st <- gibbs_move(tree = ABM$data$tree, n = ABM$data$n, m = m0, logX = logX0, Sm = Sm0, SX = Sx0, pars = pars0, priors = ABM$priors)
+      m1 <- m0
+      logX1 <- logX0
+      m0 <- new_st$m0
+      logX0 <- new_st$logX0
       hasting.ratio <- 1
     }
     
@@ -412,6 +378,14 @@ mcmc_ABM <- function(ABM, log.file = "my_ABM_mcmc.log", sampling.freq = 1000, pr
       hasting.ratio <- tmp$lnHastingsRatio
     }
     
+    #### test #####
+    #new_st <- gibbs_move(tree = ABM$data$tree, n = ABM$data$n, m = m0, logX = logX0, Sm = Sm0, SX = Sx0, pars = pars0, priors = ABM$priors)
+    #m1 <- m0
+    #logX1 <- logX0
+    #m0 <- new_st$m0
+    #logX0 <- new_st$logX0
+    #### test #####
+    
     # Posterior calculation
     prior.m0 <- unlist(mapply(do.call, ABM$priors$m, lapply(m0[ABM$data$nodes], list))[1,])
     prior.logX0 <- unlist(mapply(do.call, ABM$priors$logX, lapply(logX0[ABM$data$nodes], list))[1,])
@@ -440,10 +414,20 @@ mcmc_ABM <- function(ABM, log.file = "my_ABM_mcmc.log", sampling.freq = 1000, pr
       prior.pars1 <- prior.pars0 
       lik0 <- lik1
       
+      
+      
       if (r[2]){
         Sm0 <- Sm1
+        #### test #####
+        m0 <- m1
+        logX0 <- logX1
+        #### test #####
       } else if(r[3]){
         Sx0 <- Sx1
+        #### test #####
+        m0 <- m1
+        logX0 <- logX1
+        #### test #####
       } else if(r[4]){
         m0 <- m1
       } else if(r[5]){
