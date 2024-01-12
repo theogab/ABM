@@ -5,7 +5,7 @@ sim_ADIM <- function(tree, pars_logv = c(.01, 2, -Inf, Inf), pars_m = c(.1, 10, 
   dat <- lapply(1:nsim, function(i){
     
     if(class(tree) == "multiPhylo"){
-      if(length(tree)!=nsim) error("tree must be of the same length as nsim")
+      if(length(tree)!=nsim) stop("tree must be of the same length as nsim")
       phy <- tree[[i]]
     } else phy <- tree
     
@@ -18,7 +18,7 @@ sim_ADIM <- function(tree, pars_logv = c(.01, 2, -Inf, Inf), pars_m = c(.1, 10, 
     var_logv <- rnorm(length(b.len), 0, sqrt(pars_logv[1]*b.len))
     var_m <- rnorm(length(b.len), 0, sqrt(pars_m[1]*b.len))
     
-    # inheritance assymetry
+    # inheritance asymmetry
     Sn <- sample(c(-1,1), phy$Nnode, replace = T)
     So <- sample(c(-1,1), phy$Nnode, replace = T)
   
@@ -46,6 +46,10 @@ sim_ADIM <- function(tree, pars_logv = c(.01, 2, -Inf, Inf), pars_m = c(.1, 10, 
       } else {
         nup <- nu
         omegap <- omega
+      }
+      for(cl in desc){
+        if(cl <= n) names(m)[cl] <- names(logv)[cl] <- phy$tip.label[cl]
+        else names(m)[cl] <- names(logv)[cl] <- cl 
       }
       m[desc] <- sapply(mud(nup, omegap, exp(logv[anc]), m[anc], Sn[anc - n], So[anc - n], c(-1,1)) + var_m[bn],reflect, pars_m[3:4])
       logv[desc] <- sapply(log(sigd(nup, omegap, exp(logv[anc]), Sn[anc - n], So[anc - n], c(-1,1))) + var_logv[bn],reflect, pars_logv[3:4])
